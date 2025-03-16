@@ -1,0 +1,53 @@
+\section{Experimental Setup}
+\subsection{Environment}
+Our experiments were conducted on the following hardware:
+\begin{itemize}
+    \item CPU: Intel Core i7-9700K @ 3.60GHz
+    \item RAM: 32GB DDR4 @ 3200MHz
+    \item OS: Windows 10 Pro
+\end{itemize}
+
+\subsection{Implementation Details}
+The BufferedArrayList implementation uses the following parameters:
+\begin{itemize}
+    \item CHUNK\_SIZE = 64 elements
+    \item Initial capacity = 16 chunks
+    \item Growth factor = 1.5
+\end{itemize}
+
+\subsection{Benchmark Methodology}
+Our benchmarking approach includes:
+\begin{itemize}
+    \item Warm-up iterations: 5
+    \item Measurement iterations: 5
+    \item Fork count: 1
+    \item Timeout: 10 minutes per benchmark
+\end{itemize}
+
+\subsection{Test Cases}
+We evaluated the following scenarios:
+\begin{itemize}
+    \item Small dataset (100K elements)
+    \item Medium dataset (1M elements)
+    \item Various operation types
+    \item Different access patterns
+\end{itemize}
+
+\begin{table}[t]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Parameter} & \textbf{Value} & \textbf{Description} \\
+\hline
+CHUNK\_SIZE & 64 & Elements per chunk \\
+\hline
+INITIAL\_CAPACITY & 16 & Initial number of chunks \\
+\hline
+GROWTH\_FACTOR & 1.5 & Chunk array growth rate \\
+\hline
+BUFFER\_SIZE & 32 & Size of insertion buffer \\
+\hline
+\end{tabular}
+\caption{Implementation parameters}
+\label{tab:parameters}
+\end{table} 

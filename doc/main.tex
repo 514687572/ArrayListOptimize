@@ -1,0 +1,88 @@
+\documentclass[twocolumn]{article}
+
+% Basic packages
+\usepackage{times}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{url}
+
+% Algorithm packages
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+
+% Plotting packages
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% Other packages
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{setspace}
+\usepackage{hyperref}
+
+% Page settings
+\pagestyle{plain}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1em}
+
+\title{Optimizing ArrayList Performance in Distributed Systems: A Novel Chunked Buffer Strategy for High-Performance Computing Applications}
+
+\author{
+    \textbf{Jun'an Chen}\textsuperscript{1} \\
+    \texttt{mail514687572@gmail.com} \\
+    \textit{University of Electronic Science and Technology of China} \\
+    \textit{School of Management and Economics} \\
+    \textit{Department of Information Management and Information Systems} \\
+    \textit{Chengdu, Sichuan, China}
+}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+In distributed systems and high-performance computing environments, efficient data structures are crucial for optimal performance. Dynamic array implementations like ArrayList are fundamental components in these systems, but their performance degrades significantly when performing insertions or deletions in the middle of the array due to the need to shift elements. This paper presents a novel optimization approach called BufferedArrayList that uses a chunked buffer strategy to improve performance for these operations in distributed computing environments. Our implementation divides the array into fixed-size chunks and maintains a buffer for efficient element movement, making it particularly suitable for parallel processing and distributed data management. Through comprehensive benchmarking in a distributed environment, we demonstrate that BufferedArrayList achieves up to 4.4x better performance for random insertions and 5.9x better performance for random deletions compared to traditional ArrayList implementations. The proposed solution maintains O(1) amortized time complexity for append operations while significantly reducing the cost of middle insertions and deletions, making it an ideal choice for high-performance computing applications.
+\end{abstract}
+
+\textbf{Keywords:} ArrayList, Distributed Systems, High-Performance Computing, Data Structures, Chunked Buffer, Memory Management, Parallel Processing
+
+\textbf{Classification:} 68M20 (Performance Evaluation), 68N15 (Programming Languages), 68P05 (Data Structures), 68W15 (Distributed Algorithms)
+
+\tableofcontents
+
+\section{Introduction}
+\input{introduction}
+
+\section{Related Work}
+\input{related_work}
+
+\section{Methodology}
+\input{methodology}
+
+\section{Experimental Setup}
+\input{experimental_setup}
+
+\section{Algorithms}
+\input{algorithms}
+
+\section{Results and Analysis}
+\input{performance_plot}
+\input{performance_table}
+\input{memory_analysis}
+
+\section{Discussion}
+\input{discussion}
+
+\section{Conclusion}
+\input{conclusion}
+
+\bibliographystyle{plain}
+\input{references}
+
+\end{document} 

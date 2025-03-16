@@ -1,0 +1,50 @@
+\begin{algorithm}[t]
+\caption{Chunk Management in BufferedArrayList}
+\begin{algorithmic}[1]
+\Procedure{Insert}{index, element}
+    \State chunkIndex $\gets$ index / CHUNK\_SIZE
+    \State position $\gets$ index \% CHUNK\_SIZE
+    \If{chunk is full}
+        \State splitChunk(chunkIndex)
+    \EndIf
+    \State insertElement(chunkIndex, position, element)
+    \State updateIndices()
+\EndProcedure
+\end{algorithmic}
+\label{alg:insert}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\caption{Chunk Splitting Process}
+\begin{algorithmic}[1]
+\Procedure{SplitChunk}{chunkIndex}
+    \State oldChunk $\gets$ chunks[chunkIndex]
+    \State newChunk $\gets$ createNewChunk()
+    \State midPoint $\gets$ CHUNK\_SIZE / 2
+    \State copyElements(oldChunk, midPoint, newChunk, 0, CHUNK\_SIZE - midPoint)
+    \State oldChunk.size $\gets$ midPoint
+    \State newChunk.size $\gets$ CHUNK\_SIZE - midPoint
+    \State shiftChunks(chunkIndex + 1)
+    \State chunks[chunkIndex + 1] $\gets$ newChunk
+    \State updateIndices()
+\EndProcedure
+\end{algorithmic}
+\label{alg:split}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\caption{Element Removal Process}
+\begin{algorithmic}[1]
+\Procedure{Remove}{index}
+    \State chunkIndex $\gets$ index / CHUNK\_SIZE
+    \State position $\gets$ index \% CHUNK\_SIZE
+    \State chunk $\gets$ chunks[chunkIndex]
+    \State removeElement(chunk, position)
+    \If{chunk is too small}
+        \State mergeChunks(chunkIndex)
+    \EndIf
+    \State updateIndices()
+\EndProcedure
+\end{algorithmic}
+\label{alg:remove}
+\end{algorithm} 
