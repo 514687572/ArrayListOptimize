@@ -334,32 +334,6 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     }
 
     /**
-     * Sets an element at the specified position in the chunk
-     */
-    private void setElementAt(Chunk chunk, int positionInChunk, E element) {
-        if (positionInChunk < 0 || positionInChunk >= chunk.capacity) {
-            throw new IllegalArgumentException(
-                "Position in chunk out of bounds: " + positionInChunk + 
-                ", capacity=" + chunk.capacity);
-        }
-        
-        chunk.elements[positionInChunk] = element;
-    }
-
-    /**
-     * Updates the chunk start indices array when elements are added or removed
-     * or when chunk structure changes
-     */
-    private void updateChunkBoundaries() {
-        int currentIndex = 0;
-        for (int i = 0; i < chunkCount; i++) {
-            chunkStartIndices[i] = currentIndex;
-            Chunk chunk = (Chunk) chunks[i];
-            currentIndex += chunk.used;
-        }
-    }
-
-    /**
      * Updates chunk boundaries from a specific chunk index
      */
     private void updateChunkBoundaries(int fromChunkIndex) {
@@ -1254,28 +1228,4 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             throw new IllegalArgumentException("fromIndex(" + fromIndex + ") > toIndex(" + toIndex + ")");
     }
 
-    // 优化块内元素移动，减少System.arraycopy调用开销
-    private void optimizedShiftElements(Chunk chunk, int position, int count, boolean isInsert) {
-        // 对于小规模移动，可能直接移动优于System.arraycopy
-        if (count < 8) {
-            if (isInsert) {
-                // 手动移动元素腾出空间
-                for (int i = chunk.used - 1; i >= position; i--) {
-                    chunk.elements[i + 1] = chunk.elements[i];
-                }
-            } else {
-                // 手动移动元素填补空间
-                for (int i = position; i < chunk.used - 1; i++) {
-                    chunk.elements[i] = chunk.elements[i + 1];
-                }
-            }
-        } else {
-            // 对于大规模移动，使用System.arraycopy
-            if (isInsert) {
-                System.arraycopy(chunk.elements, position, chunk.elements, position + 1, count);
-            } else {
-                System.arraycopy(chunk.elements, position + 1, chunk.elements, position, count);
-            }
-        }
-    }
 } 
