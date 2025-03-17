@@ -39,6 +39,11 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     private static final int DEFAULT_CAPACITY = 10;
 
     /**
+     * The fill factor for a chunk, representing the actual used space ratio
+     */
+    private static final double FILL_FACTOR = 0.75;
+
+    /**
      * Step size for fast index mapping table
      * Used to create direct O(1) lookups for chunk positions
      */
@@ -431,57 +436,6 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     }
 
     /**
-     * Updates the fast index mapping table completely
-     * This is only used when a complete rebuild is needed
-     */
-    private void fullUpdateFastIndexMap() {
-        // 如果没有chunk，直接返回
-        if (chunkCount == 0) return;
-        
-        // Calculate needed size for the map
-        int neededSize = (size + INDEX_MAP_STEP - 1) / INDEX_MAP_STEP;
-        if (neededSize <= 0) neededSize = 1; // 确保至少有一个元素
-        
-        // Resize if necessary
-        if (neededSize > fastIndexMapSize) {
-            int newSize = Math.max(fastIndexMapSize * 2, neededSize);
-            int[] newMap = new int[newSize];
-            
-            // Copy existing mappings
-            if (fastIndexMapSize > 0 && fastIndexMap != null) {
-                System.arraycopy(fastIndexMap, 0, newMap, 0, Math.min(fastIndexMapSize, fastIndexMap.length));
-            }
-            
-            fastIndexMap = newMap;
-            fastIndexMapSize = newSize;
-        }
-        
-        // Update the map entries
-        if (chunkCount > 0) {
-            int currentChunk = 0;
-            
-            for (int i = 0; i < neededSize; i++) {
-                int logicalIndex = i * INDEX_MAP_STEP;
-                
-                // Skip if we're past the end of the list
-                if (logicalIndex >= size) break;
-                
-                // Find the appropriate chunk for this index
-                while (currentChunk < chunkCount - 1 && 
-                       chunkStartIndices[currentChunk + 1] <= logicalIndex) {
-                    currentChunk++;
-                }
-                
-                // 确保索引有效
-                if (currentChunk < 0) currentChunk = 0;
-                if (currentChunk >= chunkCount) currentChunk = chunkCount - 1;
-                
-                fastIndexMap[i] = currentChunk;
-            }
-        }
-    }
-
-    /**
      * Adds an element to the end of the list
      */
     @Override
@@ -492,8 +446,8 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         int lastChunkIndex = chunkCount - 1;
         Chunk lastChunk = (Chunk) chunks[lastChunkIndex];
         
-        // If last chunk is full, resize it
-        if (lastChunk.used >= lastChunk.capacity) {
+        // If last chunk is full, add new chunk
+        if (lastChunk.used >= (lastChunk.capacity*FILL_FACTOR)) {
             // 直接创建新的chunk
             Chunk newChunk = new Chunk(CHUNK_SIZE);
             addChunk(newChunk);
