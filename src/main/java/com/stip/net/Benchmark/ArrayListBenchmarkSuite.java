@@ -13,22 +13,24 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 综合基准测试套件
- * 测试各种列表实现在不同操作场景下的性能表现
- * 生成详细的JSON格式结果，可用于进一步分析和可视化
+ * 综合基准测试套件 - 多种List实现性能对比
+ *
+ * 测试的数据结构：
+ * - ArrayList          标准连续数组实现
+ * - BufferedArrayList  分块 + Gap Buffer 优化（针对中间频繁插入/删除）
+ * - LinkedList         双向链表
+ * - Vector             线程安全的 ArrayList（synchronized）
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 @State(Scope.Thread)
 @Fork(1)
-@Warmup(iterations = 3, time = 1)
+@Threads(4)
+@Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 5, time = 1)
 public class ArrayListBenchmarkSuite {
 
@@ -40,36 +42,35 @@ public class ArrayListBenchmarkSuite {
 
     /**
      * 测试数据规模
+     * 注意：较大规模下 LinkedList 可能非常慢或耗内存较多
      */
-    @Param({"10000","100000","1000000"})
+    @Param({"10000", "100000", "1000000", "10000000"})
     private int size;
 
     /**
-     * 用于随机操作的随机数生成器
+     * 用于随机操作的随机数生成器（固定种子保证可重复）
      */
     private static final Random RANDOM = new Random(42);
 
     /**
-     * 当前测试使用的列表
+     * 当前测试使用的列表（预填充好的）
      */
     private List<Integer> list;
 
-    /**
-     * 基准测试的主入口
-     */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
                 .include(ArrayListBenchmarkSuite.class.getSimpleName())
                 .resultFormat(ResultFormatType.JSON)
-                .result("array-list-benchmark-results.json")
+                .result("list-benchmark-results2026-01-21.json")
+                .jvmArgs("-XX:+UseParallelGC")
                 .build();
         new Runner(opt).run();
     }
 
     /**
-     * 在每个基准测试之前初始化列表
+     * 每次迭代前重新初始化并预填充列表
      */
-    @Setup
+    @Setup(Level.Iteration)
     public void setup() {
         switch (listType) {
             case "ArrayList":
@@ -78,33 +79,51 @@ public class ArrayListBenchmarkSuite {
             case "BufferedArrayList":
                 list = new BufferedArrayList<>(size);
                 break;
+            case "LinkedList":
+                list = new LinkedList<>();
+                break;
+            case "Vector":
+                list = new Vector<>(size);
+                break;
+            default:
+                throw new IllegalArgumentException("未知的列表类型: " + listType);
+        }
+
+        // 预填充（除了 testAppend 外的大多数场景使用）
+        for (int i = 0; i < size; i++) {
+            list.add(i);
+        }
+    }
+
+    /**
+     * 创建一个新的空列表（主要给 testAppend 使用）
+     */
+    private List<Integer> createEmptyList() {
+        switch (listType) {
+            case "ArrayList":
+                return new ArrayList<>(size);
+            case "BufferedArrayList":
+                return new BufferedArrayList<>(size);
+            case "LinkedList":
+                return new LinkedList<>();
+            case "Vector":
+                return new Vector<>(size);
             default:
                 throw new IllegalArgumentException("未知的列表类型: " + listType);
         }
     }
 
-    /**
-     * 测试添加到列表末尾的性能（append操作）
-     */
     @Benchmark
     public void testAppend(Blackhole bh) {
+        List<Integer> appendList = createEmptyList();
         for (int i = 0; i < size; i++) {
-            list.add(i);
+            appendList.add(i);
         }
-        bh.consume(list);
+        bh.consume(appendList);
     }
 
-    /**
-     * 测试中间插入的性能
-     */
     @Benchmark
     public void testInsertMiddle(Blackhole bh) {
-        // 首先填充列表
-        for (int i = 0; i < size / 2; i++) {
-            list.add(i);
-        }
-        
-        // 然后在中间位置插入元素
         int operations = Math.min(size / 5, 10000);
         for (int i = 0; i < operations; i++) {
             list.add(list.size() / 2, i);
@@ -112,17 +131,8 @@ public class ArrayListBenchmarkSuite {
         bh.consume(list);
     }
 
-    /**
-     * 测试随机位置插入的性能
-     */
     @Benchmark
     public void testRandomInsert(Blackhole bh) {
-        // 首先填充列表
-        for (int i = 0; i < size / 2; i++) {
-            list.add(i);
-        }
-        
-        // 然后在随机位置插入元素
         int operations = Math.min(size / 5, 10000);
         for (int i = 0; i < operations; i++) {
             int randomPos = RANDOM.nextInt(list.size() + 1);
@@ -131,18 +141,9 @@ public class ArrayListBenchmarkSuite {
         bh.consume(list);
     }
 
-    /**
-     * 测试随机位置删除的性能
-     */
     @Benchmark
     public void testRandomRemove(Blackhole bh) {
-        // 首先填充列表
-        for (int i = 0; i < size; i++) {
-            list.add(i);
-        }
-        
-        // 然后随机删除元素
-        int removalCount = Math.min(size / 2, 10000); // 限制删除次数
+        int removalCount = Math.min(size / 2, 10000);
         for (int i = 0; i < removalCount && !list.isEmpty(); i++) {
             int randomPos = RANDOM.nextInt(list.size());
             list.remove(randomPos);
@@ -150,69 +151,42 @@ public class ArrayListBenchmarkSuite {
         bh.consume(list);
     }
 
-    /**
-     * 测试获取（随机访问）的性能
-     */
     @Benchmark
     public void testRandomAccess(Blackhole bh) {
-        // 首先填充列表
-        for (int i = 0; i < size; i++) {
-            list.add(i);
-        }
-        
-        // 然后随机访问元素
-        int accessCount = Math.min(size * 10, 1000000);
+        int accessCount = Math.min(size * 10, 1_000_000);
         for (int i = 0; i < accessCount; i++) {
             int randomPos = RANDOM.nextInt(list.size());
             bh.consume(list.get(randomPos));
         }
     }
 
-    /**
-     * 测试顺序访问（迭代）的性能
-     */
     @Benchmark
     public void testSequentialAccess(Blackhole bh) {
-        // 首先填充列表
-        for (int i = 0; i < size; i++) {
-            list.add(i);
-        }
-        
-        // 然后顺序访问元素
         for (Integer value : list) {
             bh.consume(value);
         }
     }
 
-    /**
-     * 测试混合操作的性能（插入、删除、获取的组合）
-     */
     @Benchmark
     public void testMixedOperations(Blackhole bh) {
-        // 首先填充列表
-        for (int i = 0; i < size; i++) {
-            list.add(i);
-        }
-        
-        // 执行混合操作
         int operationCount = Math.min(size, 10000);
         for (int i = 0; i < operationCount; i++) {
-            int operationType = i % 3; // 0: 插入, 1: 删除, 2: 获取
-            switch (operationType) {
-                case 0: // 插入
-                    int insertPos = RANDOM.nextInt(list.size() + 1);
-                    list.add(insertPos, i);
+            int op = i % 3;
+            switch (op) {
+                case 0: // insert
+                    int pos = RANDOM.nextInt(list.size() + 1);
+                    list.add(pos, i);
                     break;
-                case 1: // 删除
+                case 1: // remove
                     if (!list.isEmpty()) {
-                        int removePos = RANDOM.nextInt(list.size());
-                        list.remove(removePos);
+                        pos = RANDOM.nextInt(list.size());
+                        list.remove(pos);
                     }
                     break;
-                case 2: // 获取
+                case 2: // get
                     if (!list.isEmpty()) {
-                        int getPos = RANDOM.nextInt(list.size());
-                        bh.consume(list.get(getPos));
+                        pos = RANDOM.nextInt(list.size());
+                        bh.consume(list.get(pos));
                     }
                     break;
             }
@@ -220,53 +194,35 @@ public class ArrayListBenchmarkSuite {
         bh.consume(list);
     }
 
-    /**
-     * 测试批量操作的性能（排序、洗牌）
-     */
     @Benchmark
     public void testBulkOperations(Blackhole bh) {
-        // 首先填充列表
+        list.clear();
         for (int i = 0; i < size; i++) {
-            list.add(RANDOM.nextInt(size * 10)); // 添加随机值
+            list.add(RANDOM.nextInt(size * 10));
         }
-        
-        // 排序
         Collections.sort(list);
         bh.consume(list);
-        
-        // 洗牌
         Collections.shuffle(list, RANDOM);
         bh.consume(list);
     }
 
-    /**
-     * 测试中间区域的批量修改（重点测试需要大量元素移动的场景）
-     */
     @Benchmark
     public void testMiddleSectionModification(Blackhole bh) {
-        // 首先填充列表
-        for (int i = 0; i < size; i++) {
-            list.add(i);
-        }
-        
-        // 中间部分执行批量修改
         int start = size / 4;
         int end = 3 * size / 4;
-        int operations = Math.min((end - start) / 10, 1000);
-        
-        // 在中间部分进行插入和删除
-        for (int i = 0; i < operations; i++) {
+        int ops = Math.min((end - start) / 10, 1000);
+
+        for (int i = 0; i < ops; i++) {
             int pos = start + RANDOM.nextInt(end - start);
-            list.add(pos, i * 100); // 插入
-            
+            list.add(pos, i * 100);
+
             if (i % 2 == 0 && !list.isEmpty()) {
                 pos = start + RANDOM.nextInt(end - start);
                 if (pos < list.size()) {
-                    list.remove(pos); // 删除
+                    list.remove(pos);
                 }
             }
         }
-        
         bh.consume(list);
     }
-} 
+}
