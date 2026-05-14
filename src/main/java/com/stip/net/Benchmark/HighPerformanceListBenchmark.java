@@ -91,7 +91,7 @@ public class HighPerformanceListBenchmark {
      * - VECTOR: Synchronized ArrayList (thread-safe but slower)
      * - BUFFERED_ARRAY_LIST: Gap buffer + chunked array hybrid (our contribution)
      */
-    @Param({"ARRAY_LIST", "TREE_LIST", "VECTOR", "BUFFERED_ARRAY_LIST"})
+    @Param({"ARRAY_LIST", "TREE_LIST", "VECTOR", "BUFFERED_ARRAY_LIST", "LINKED_LIST"})
     private String listType;
 
     /**
@@ -372,6 +372,9 @@ public class HighPerformanceListBenchmark {
                 
             case "BUFFERED_ARRAY_LIST":
                 return new com.stip.net.optimized.BufferedArrayList<>(initialCapacity);
+                
+            case "LINKED_LIST":
+                return new java.util.LinkedList<>();
                 
             default:
                 throw new IllegalArgumentException("Unknown list type: " + type);

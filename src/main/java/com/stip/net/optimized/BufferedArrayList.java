@@ -48,33 +48,33 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
      * Default chunk size (number of elements per chunk)
      * Using power of 2 for efficient bit shift operations
      */
-    private static final int CHUNK_SIZE = 4096; // 2^12
+    private int chunkSize = 4096; // configurable per instance
 
     /**
      * OPTIMIZED: Small chunk size for small lists to reduce memory overhead
      */
-    private static final int SMALL_CHUNK_SIZE = 1024; // 2^10
+    private int smallChunkSize = 1024;
 
     /**
-     * OPTIMIZED: Threshold for using small chunks (below this size, use SMALL_CHUNK_SIZE)
+     * OPTIMIZED: Threshold for using small chunks (below this size, use smallChunkSize)
      */
-    private static final int SMALL_LIST_THRESHOLD = 10000;
+    private int smallListThreshold = 10000;
 
     /**
-     * Bit shift amount for CHUNK_SIZE operations
+     * Bit shift amount for chunkSize operations
      */
-    private static final int CHUNK_SIZE_SHIFT = 12;
+    private int chunkSizeShift = 12;
 
     /**
-     * Bit mask for CHUNK_SIZE modulo operations
-     * Reserved for future optimizations (e.g., index % CHUNK_SIZE = index & CHUNK_SIZE_MASK)
+     * Bit mask for chunkSize modulo operations
+     * Reserved for future optimizations (e.g., index % chunkSize = index & chunkSizeMask)
      */
-    private static final int CHUNK_SIZE_MASK = CHUNK_SIZE - 1; // 4095
+    private int chunkSizeMask = 4095;
 
     /**
      * Threshold for when to split a chunk into two
      */
-    private static final int SPLIT_THRESHOLD = 8192; // 2^13
+    private int splitThreshold = 8192;
 
     /**
      * Default initial capacity for the array list
@@ -125,7 +125,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
      * Small lists use smaller chunks to reduce memory overhead
      */
     private int getDynamicChunkSize() {
-        return size < SMALL_LIST_THRESHOLD ? SMALL_CHUNK_SIZE : CHUNK_SIZE;
+        return size < smallListThreshold ? smallChunkSize : chunkSize;
     }
 
     /**
@@ -142,7 +142,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         int gapEnd;             // End position of the gap (exclusive)
 
         Chunk(int initialCapacity) {
-            this.capacity = Math.max(initialCapacity, CHUNK_SIZE);
+            this.capacity = Math.max(initialCapacity, chunkSize);
             elements = new Object[capacity];
             used = 0;
             // Initialize gap to cover the entire array
@@ -306,7 +306,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
          * Expand gap when it's full
          */
         private void expandGap() {
-            int newCapacity = capacity + Math.max(CHUNK_SIZE >> 2, 1);
+            int newCapacity = capacity + Math.max(chunkSize >> 2, 1);
             Object[] newElements = new Object[newCapacity];
 
             // Copy elements before gap
@@ -549,7 +549,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         }
 
         // Calculate how many chunks we'll need initially - using bit shift
-        int neededChunks = Math.max(1, (initialCapacity + CHUNK_SIZE - 1) >> CHUNK_SIZE_SHIFT);
+        int neededChunks = Math.max(1, (initialCapacity + chunkSize - 1) >> chunkSizeShift);
         int initialChunksCapacity = Math.max(INITIAL_CHUNKS_CAPACITY, neededChunks);
 
         // Initialize the chunks array and metadata arrays
@@ -573,9 +573,9 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
         // Create initial chunks if needed - use dynamic chunk size
         if (initialCapacity > 0) {
-            int chunkSize = initialCapacity < SMALL_LIST_THRESHOLD ? SMALL_CHUNK_SIZE : CHUNK_SIZE;
+            int cs = initialCapacity < smallListThreshold ? smallChunkSize : chunkSize;
             for (int i = 0; i < neededChunks; i++) {
-                addChunk(new Chunk(chunkSize));
+                addChunk(new Chunk(cs));
             }
         }
     }
@@ -585,6 +585,15 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
      */
     public BufferedArrayList() {
         this(DEFAULT_CAPACITY);
+    }
+
+    public BufferedArrayList(int initialCapacity, int customChunkSize) {
+        this(initialCapacity);
+        this.chunkSize = customChunkSize;
+        this.smallChunkSize = Math.max(customChunkSize / 4, 64);
+        this.chunkSizeShift = 31 - Integer.numberOfLeadingZeros(customChunkSize);
+        this.chunkSizeMask = customChunkSize - 1;
+        this.splitThreshold = customChunkSize * 2;
     }
 
     /**
@@ -881,7 +890,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     public void ensureCapacity(int minCapacity) {
         if (minCapacity > 0) {
             // OPTIMIZED: Use dynamic chunk size based on target capacity
-            int dynamicChunkSize = minCapacity < SMALL_LIST_THRESHOLD ? SMALL_CHUNK_SIZE : CHUNK_SIZE;
+            int dynamicChunkSize = minCapacity < smallListThreshold ? smallChunkSize : chunkSize;
 
             // If we have no chunks yet, initialize with one
             if (chunkCount == 0 && minCapacity > 0) {
@@ -994,9 +1003,9 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
                 Chunk next = (Chunk) chunks[i + 1];
                 double fill = (double) c.used / c.capacity;
 
-                // Merge if: low fill (< FILL_FACTOR/2 = 37.5%) AND combined size reasonable (<1.5x CHUNK_SIZE)
+                // Merge if: low fill (< FILL_FACTOR/2 = 37.5%) AND combined size reasonable (<1.5x chunkSize)
                 // More aggressive than fixed 0.4 threshold, adapts to FILL_FACTOR setting
-                if (fill < (FILL_FACTOR / 2) && c.used + next.used <= CHUNK_SIZE * 1.5) {
+                if (fill < (FILL_FACTOR / 2) && c.used + next.used <= chunkSize * 1.5) {
                     // Ensure current chunk gap is at end
                     if (c.gapStart != c.used) {
                         c.moveGapTo(c.used);
@@ -1022,7 +1031,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             }
 
             // 3. If chunk is oversized and has low fill rate, shrink capacity
-            if (c.capacity > CHUNK_SIZE * 2 && (double) c.used / c.capacity < 0.6) {
+            if (c.capacity > chunkSize * 2 && (double) c.used / c.capacity < 0.6) {
                 normalizeChunk(i);
             }
 
@@ -1182,7 +1191,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             // Directly add new chunk instead of using ensureCapacity
             // because ensureCapacity checks totalCapacity which may have unused space
             // OPTIMIZED: Force large chunk for append - list is growing, small chunks are inefficient
-            Chunk newChunk = new Chunk(CHUNK_SIZE);  // Always use 4096 for growing lists
+            Chunk newChunk = new Chunk(chunkSize);  // Always use 4096 for growing lists
             addChunk(newChunk);
             lastChunk = newChunk;
         }
@@ -1225,13 +1234,13 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         if (chunk.used >= chunk.capacity) {
             int oldCapacity = chunk.capacity;
             // Resize with some extra space for future insertions - using bit shift
-            chunk.resize(Math.max(CHUNK_SIZE >> 2, 1)); // CHUNK_SIZE / 4
+            chunk.resize(Math.max(chunkSize >> 2, 1)); // chunkSize / 4
             chunkCapacities[chunkIndex] = chunk.capacity;
             // Update cached total capacity
             totalCapacity += (chunk.capacity - oldCapacity);
 
             // Check if we need to split after resize
-            if (chunk.capacity >= SPLIT_THRESHOLD) {
+            if (chunk.capacity >= splitThreshold) {
                 // When splitting, the logical index remains the same,
                 // but the chunk and position might change
                 splitChunk(chunkIndex);
@@ -1333,7 +1342,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
                 } else {
                     // Current chunk is full → create new chunk
                     // OPTIMIZED: Force large chunk for append - bulk operations benefit from fewer chunks
-                    addChunk(new Chunk(CHUNK_SIZE));  // Always use 4096 for bulk append
+                    addChunk(new Chunk(chunkSize));  // Always use 4096 for bulk append
                 }
             }
 
@@ -1356,7 +1365,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             ensureCapacity(size + total);
 
             // OPTIMIZED: Use appropriate chunk size for very large collections
-            int chunkSizeToUse = CHUNK_SIZE; // Always use large chunks for parallel operations
+            int chunkSizeToUse = chunkSize; // Always use large chunks for parallel operations
 
             // Calculate number of chunks needed
             int chunksNeeded = (total + chunkSizeToUse - 1) / chunkSizeToUse;
@@ -1399,8 +1408,8 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
                 private void fillChunk(int chunkIdx) {
                     int relativeIdx = chunkIdx - startChunkIndex;
-                    int srcOffset = relativeIdx * CHUNK_SIZE;
-                    int copyLen = Math.min(CHUNK_SIZE, total - srcOffset);
+                    int srcOffset = relativeIdx * chunkSize;
+                    int copyLen = Math.min(chunkSize, total - srcOffset);
 
                     if (copyLen <= 0) return;
 
@@ -1437,7 +1446,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
      * For middle insertion, uses insertWithGap in batch mode for correctness.
      * For append (index == size), uses the highly optimized bulk addAll.
      *
-     * OPTIMIZED: For large bulk middle insertions (> CHUNK_SIZE/2), creates dedicated chunks
+     * OPTIMIZED: For large bulk middle insertions (> chunkSize/2), creates dedicated chunks
      * to avoid expensive gap buffer shifts, significantly improving performance.
      *
      * @param index index at which to insert the first element
@@ -1465,7 +1474,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
         // OPTIMIZED: Large bulk middle insertion - create dedicated chunks
         // This avoids expensive gap movements and element shifts
-        if (total > CHUNK_SIZE / 2) {
+        if (total > chunkSize / 2) {
             try (BatchScope __ = beginBatch()) {
                 ensureCapacity(size + total);
 
@@ -1476,7 +1485,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
                 // Split the current chunk at the insertion point
                 // Left part: elements [0, posInChunk)
-                Chunk leftChunk = new Chunk(CHUNK_SIZE);
+                Chunk leftChunk = new Chunk(Math.max(chunkSize, posInChunk));
                 for (int i = 0; i < posInChunk; i++) {
                     leftChunk.elements[i] = originalChunk.getWithGap(i);
                 }
@@ -1485,8 +1494,8 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
                 leftChunk.gapEnd = leftChunk.capacity;
 
                 // Right part: elements [posInChunk, originalChunk.used)
-                Chunk rightChunk = new Chunk(CHUNK_SIZE);
                 int rightSize = originalChunk.used - posInChunk;
+                Chunk rightChunk = new Chunk(Math.max(chunkSize, rightSize));
                 for (int i = 0; i < rightSize; i++) {
                     rightChunk.elements[i] = originalChunk.getWithGap(posInChunk + i);
                 }
@@ -1499,11 +1508,11 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
                 chunkCapacities[chunkIdx] = leftChunk.capacity;
 
                 // Create new chunk(s) for bulk data
-                int numNewChunks = (total + CHUNK_SIZE - 1) / CHUNK_SIZE;
+                int numNewChunks = (total + chunkSize - 1) / chunkSize;
                 for (int i = 0; i < numNewChunks; i++) {
-                    Chunk bulkChunk = new Chunk(CHUNK_SIZE);
-                    int srcOffset = i * CHUNK_SIZE;
-                    int copyLen = Math.min(CHUNK_SIZE, total - srcOffset);
+                    Chunk bulkChunk = new Chunk(chunkSize);
+                    int srcOffset = i * chunkSize;
+                    int copyLen = Math.min(chunkSize, total - srcOffset);
                     System.arraycopy(arr, srcOffset, bulkChunk.elements, 0, copyLen);
                     bulkChunk.used = copyLen;
                     bulkChunk.gapStart = copyLen;
@@ -1648,7 +1657,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         if (chunk.used == 0 && chunkCount > 1) {
             // Remove empty chunk
             removeChunkAt(chunkIndex);
-        } else if (chunk.used < (chunk.capacity >> 2) && chunk.capacity > CHUNK_SIZE && chunkCount > 1) {
+        } else if (chunk.used < (chunk.capacity >> 2) && chunk.capacity > chunkSize && chunkCount > 1) {
             // Shrink oversized chunks that are mostly empty (capacity / 4)
             normalizeChunk(chunkIndex);
         }
@@ -1906,7 +1915,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         Chunk originalChunk = (Chunk) chunks[chunkIndex];
 
         // Only split if the chunk is over the threshold
-        if (originalChunk.capacity < SPLIT_THRESHOLD || originalChunk.used < CHUNK_SIZE) {
+        if (originalChunk.capacity < splitThreshold || originalChunk.used < chunkSize) {
             return;
         }
 
@@ -1914,7 +1923,8 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         int halfPoint = originalChunk.used >> 1;
 
         // Create a new chunk for the second half
-        Chunk newChunk = new Chunk(CHUNK_SIZE);
+        int secondHalfSize = originalChunk.used - halfPoint;
+        Chunk newChunk = new Chunk(Math.max(chunkSize, secondHalfSize));
 
         // CRITICAL: Use getWithGap to properly access elements considering gap buffer structure
         // Copy second half elements (logical indices [halfPoint, used)) to new chunk
@@ -1934,7 +1944,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         originalChunk.gapEnd = originalChunk.capacity;
 
         // Normalize original chunk size if it's much larger than needed
-        if (originalChunk.capacity > CHUNK_SIZE + (CHUNK_SIZE >> 1)) {
+        if (originalChunk.capacity > chunkSize + (chunkSize >> 1)) {
             normalizeChunk(chunkIndex);
         }
 
@@ -1955,10 +1965,10 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
         // OPTIMIZED: More aggressive shrinking - shrink if used < 25% of capacity
         boolean needsShrink = false;
-        int targetCapacity = CHUNK_SIZE;
+        int targetCapacity = chunkSize;
 
         // Case 1: Chunk is oversized
-        if (chunk.capacity > CHUNK_SIZE + (CHUNK_SIZE >> 1)) {
+        if (chunk.capacity > chunkSize + (chunkSize >> 1)) {
             needsShrink = true;
         }
 
@@ -1973,8 +1983,8 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             return;
         }
 
-        // Create a new chunk with appropriate size
-        Chunk normalizedChunk = new Chunk(targetCapacity);
+        // Create a new chunk with appropriate size (must fit all used elements)
+        Chunk normalizedChunk = new Chunk(Math.max(targetCapacity, chunk.used));
 
         // CRITICAL: Use toContiguousArray to properly extract elements from gap buffer
         Object[] contiguousData = chunk.toContiguousArray();
