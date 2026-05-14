@@ -1,21 +1,24 @@
-\begin{table}[htbp]
+\begin{table*}[htbp]
 \centering
-\caption{Performance Comparison (N=1,000,000, unit: μs/op)}
+\begin{scriptsize}
+\caption{Performance Comparison (N=1,000,000, unit: $\mu$s/op)}
 \label{tab:performance}
-\begin{tabular}{lllll}
+\setlength{\tabcolsep}{2pt}
+\begin{tabular*}{\textwidth}{@{}@{\extracolsep{\fill}}lrrrr@{}}
 \toprule
-Benchmark & ARRAY_LIST & BUFFERED_ARRAY_LIST & TREE_LIST & VECTOR \\
+Benchmark & ArrayList & BufferedArrayList & TreeList & Vector \\
 \midrule
-B01_SequentialAppend & 37461.4 ± 729.2 & 8325.7 ± 20.1 & 217816.8 ± 2079.5 & 43215.2 ± 3775.5 \\
-B02_RandomInsertion & 57313.3 ± 109.7 & 17516.1 ± 47.0 & 19299.2 ± 282.2 & 57270.0 ± 112.5 \\
-B03_MiddleInsertion & 1264244.1 ± 50230.6 & 13100.9 ± 15.4 & 279877.3 ± 6408.5 & 1247747.0 ± 50771.0 \\
-B04_HeadInsertion & 10799.3 ± 2380.5 & 2589.4 ± 11.3 & 1460.6 ± 39.1 & 10563.0 ± 2165.3 \\
-B05_RandomAccess & 23205.9 ± 123.5 & 388857.7 ± 8650.4 & 600644.7 ± 4598.6 & 29681.7 ± 92.1 \\
-B06_SequentialIteration & 4372.1 ± 6.3 & 5701.4 ± 14.5 & 23914.4 ± 338.4 & 21852.1 ± 7.2 \\
-B07_IndexedIteration & 3587.5 ± 3.1 & 80290.2 ± 361.4 & 109614.1 ± 294.8 & 42416.3 ± 15.9 \\
-B08_RandomDeletion & 1194424.4 ± 47800.2 & 18565.5 ± 36.8 & 233568.0 ± 3235.3 & 8519439.8 ± 4854426.6 \\
-B09_TailDeletion & 37067.6 ± 597.9 & 13575.6 ± 148.2 & 222410.7 ± 2966.2 & 42697.0 ± 3558.7 \\
-B10_MixedWorkload & 291536.6 ± 22265.6 & 8002.8 ± 16.6 & 121521.1 ± 1912.4 & 314143.8 ± 29494.2 \\
+B01\_SequentialAppend & 37461.4 $\pm$ 729.2 & 8325.7 $\pm$ 20.1 & 217816.8 $\pm$ 2079.5 & 43215.2 $\pm$ 3775.5 \\
+B02\_RandomInsertion & 57313.3 $\pm$ 109.7 & 17516.1 $\pm$ 47.0 & 19299.2 $\pm$ 282.2 & 57270.0 $\pm$ 112.5 \\
+B03\_MiddleInsertion & 1264244.1 $\pm$ 50230.6 & 13100.9 $\pm$ 15.4 & 279877.3 $\pm$ 6408.5 & 1247747.0 $\pm$ 50771.0 \\
+B04\_HeadInsertion & 10799.3 $\pm$ 2380.5 & 2589.4 $\pm$ 11.3 & 1460.6 $\pm$ 39.1 & 10563.0 $\pm$ 2165.3 \\
+B05\_RandomAccess & 23205.9 $\pm$ 123.5 & 388857.7 $\pm$ 8650.4 & 600644.7 $\pm$ 4598.6 & 29681.7 $\pm$ 92.1 \\
+B06\_SequentialIteration & 4372.1 $\pm$ 6.3 & 5701.4 $\pm$ 14.5 & 23914.4 $\pm$ 338.4 & 21852.1 $\pm$ 7.2 \\
+B07\_IndexedIteration & 3587.5 $\pm$ 3.1 & 80290.2 $\pm$ 361.4 & 109614.1 $\pm$ 294.8 & 42416.3 $\pm$ 15.9 \\
+B08\_RandomDeletion & 1194424.4 $\pm$ 47800.2 & 18565.5 $\pm$ 36.8 & 233568.0 $\pm$ 3235.3 & 8519439.8 $\pm$ 4854426.6 \\
+B09\_TailDeletion & 37067.6 $\pm$ 597.9 & 13575.6 $\pm$ 148.2 & 222410.7 $\pm$ 2966.2 & 42697.0 $\pm$ 3558.7 \\
+B10\_MixedWorkload & 291536.6 $\pm$ 22265.6 & 8002.8 $\pm$ 16.6 & 121521.1 $\pm$ 1912.4 & 314143.8 $\pm$ 29494.2 \\
 \bottomrule
-\end{tabular}
-\end{table}
+\end{tabular*}
+\end{scriptsize}
+\end{table*}

@@ -1,0 +1,58 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.stip.net.Benchmark.BlockchainLogBenchmark.blockchain01_TransactionOrdering",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "D:\\tools\\ORACLE-JDK17\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Xmx4g",
+            "-Xms2g"
+        ],
+        "jdkVersion" : "17.0.16",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "17.0.16+12-LTS-247",
+        "warmupIterations" : 1,
+        "warmupTime" : "3 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 1,
+        "measurementTime" : "5 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "listType" : "ARRAY_LIST",
+            "outOfOrderPercent" : "0",
+            "transactionCount" : "10000"
+        },
+        "primaryMetric" : {
+            "score" : 0.2658190132242817,
+            "scoreError" : "NaN",
+            "scoreConfidence" : [
+                "NaN",
+                "NaN"
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.2658190132242817,
+                "50.0" : 0.2658190132242817,
+                "90.0" : 0.2658190132242817,
+                "95.0" : 0.2658190132242817,
+                "99.0" : 0.2658190132242817,
+                "99.9" : 0.2658190132242817,
+                "99.99" : 0.2658190132242817,
+                "99.999" : 0.2658190132242817,
+                "99.9999" : 0.2658190132242817,
+                "100.0" : 0.2658190132242817
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    0.2658190132242817
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+
