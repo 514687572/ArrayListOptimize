@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 @State(Scope.Benchmark)
 public class RealEthereumBenchmark {
 
-    @Param({"ARRAY_LIST", "TREE_LIST", "BUFFERED_ARRAY_LIST"})
+    @Param({"ARRAY_LIST", "TREE_LIST", "VECTOR", "BUFFERED_ARRAY_LIST"})
     private String listType;
 
     private List<EthereumDataFetcher.RealTransaction> realTransactions;
@@ -69,18 +69,25 @@ public class RealEthereumBenchmark {
     public void mempoolSimulation(Blackhole bh) {
         List<EthereumDataFetcher.RealTransaction> mempool = createList();
         Random random = new Random(42);
-        int ops = Math.min(realTransactions.size(), 10000);
+        int ops = realTransactions.size();
+        int maxMempoolSize = 5000;
 
         for (int i = 0; i < ops; i++) {
             EthereumDataFetcher.RealTransaction tx = realTransactions.get(i);
             double action = random.nextDouble();
-            if (action < 0.7) {
+            if (action < 0.65 && mempool.size() < maxMempoolSize) {
                 int pos = binarySearchByGasPrice(mempool, tx);
                 mempool.add(pos, tx);
-            } else if (action < 0.9 && !mempool.isEmpty()) {
+            } else if (action < 0.85 && !mempool.isEmpty()) {
                 mempool.remove(0);
-            } else if (!mempool.isEmpty()) {
-                mempool.remove(random.nextInt(mempool.size()));
+            } else if (action < 0.95 && !mempool.isEmpty()) {
+                int removeIdx = random.nextInt(Math.min(mempool.size(), 100));
+                mempool.remove(removeIdx);
+            } else if (mempool.size() > maxMempoolSize / 2) {
+                int removeCount = Math.min(10, mempool.size());
+                for (int j = 0; j < removeCount; j++) {
+                    if (!mempool.isEmpty()) mempool.remove(0);
+                }
             }
         }
         bh.consume(mempool.size());
@@ -105,6 +112,53 @@ public class RealEthereumBenchmark {
             chain.add(realTransactions.get(i));
         }
         bh.consume(chain.size());
+    }
+
+    @Benchmark
+    public void blockBuildingSimulation(Blackhole bh) {
+        List<EthereumDataFetcher.RealTransaction> pendingTxs = createList();
+        int blockSize = 200;
+        int totalBlocks = realTransactions.size() / blockSize;
+
+        for (int block = 0; block < totalBlocks; block++) {
+            int startIdx = block * blockSize;
+            int endIdx = Math.min(startIdx + blockSize, realTransactions.size());
+            
+            for (int i = startIdx; i < endIdx; i++) {
+                EthereumDataFetcher.RealTransaction tx = realTransactions.get(i);
+                int pos = binarySearchByGasPrice(pendingTxs, tx);
+                pendingTxs.add(pos, tx);
+            }
+            
+            int txsToInclude = Math.min(150, pendingTxs.size());
+            for (int i = 0; i < txsToInclude; i++) {
+                pendingTxs.remove(0);
+            }
+        }
+        bh.consume(pendingTxs.size());
+    }
+
+    @Benchmark
+    public void batchInsertSimulation(Blackhole bh) {
+        List<EthereumDataFetcher.RealTransaction> list = createList();
+        int batchSize = 1000;
+        
+        for (int batch = 0; batch < realTransactions.size() / batchSize; batch++) {
+            int startIdx = batch * batchSize;
+            int endIdx = Math.min(startIdx + batchSize, realTransactions.size());
+            
+            for (int i = startIdx; i < endIdx; i++) {
+                list.add(realTransactions.get(i));
+            }
+            
+            if (batch % 10 == 9 && list.size() > batchSize) {
+                int removeCount = list.size() / 4;
+                for (int i = 0; i < removeCount; i++) {
+                    list.remove(list.size() - 1);
+                }
+            }
+        }
+        bh.consume(list.size());
     }
 
     private int countOutOfOrder(List<EthereumDataFetcher.RealTransaction> txs) {
@@ -152,6 +206,7 @@ public class RealEthereumBenchmark {
         switch (listType) {
             case "ARRAY_LIST": return new ArrayList<>();
             case "TREE_LIST": return new TreeList<>();
+            case "VECTOR": return new Vector<>();
             case "BUFFERED_ARRAY_LIST": return new BufferedArrayList<>();
             default: throw new IllegalArgumentException("Unknown: " + listType);
         }

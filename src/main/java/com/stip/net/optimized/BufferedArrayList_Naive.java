@@ -9,11 +9,8 @@ import java.util.*;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveAction;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * A high-performance buffered array list implementation using advanced optimization techniques:
@@ -41,7 +38,7 @@ import java.util.stream.Stream;
  * @param <E> type of elements stored in the list
  * @author Optimized implementation with interpolation search and batch processing
  */
-public class BufferedArrayList<E> extends AbstractList<E> implements RandomAccess, Cloneable, java.io.Serializable {
+public class BufferedArrayList_Naive<E> extends AbstractList<E> implements RandomAccess, Cloneable, java.io.Serializable {
     private static final long serialVersionUID = -3483448492418448862L;
 
     /**
@@ -273,7 +270,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
          * Get element at logical position (considering gap)
          * OPTIMIZED: Branchless address computation using arithmetic sign mask
          * Eliminates branch misprediction overhead on read-heavy workloads
-         * 
+         *
          * Logic: if position >= gapStart, add gapSize to position
          * Branchless: use -(gapStart - 1 - position) >>> 31 to get 1 when position >= gapStart
          */
@@ -585,7 +582,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
      * @param initialCapacity the initial capacity of the list
      * @throws IllegalArgumentException if the specified initial capacity is negative
      */
-    public BufferedArrayList(int initialCapacity) {
+    public BufferedArrayList_Naive(int initialCapacity) {
         if (initialCapacity < 0) {
             throw new IllegalArgumentException("Illegal Capacity: " + initialCapacity);
         }
@@ -625,11 +622,11 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     /**
      * Constructs an empty list with a default initial capacity (10).
      */
-    public BufferedArrayList() {
+    public BufferedArrayList_Naive() {
         this(DEFAULT_CAPACITY);
     }
 
-    public BufferedArrayList(int initialCapacity, int customChunkSize) {
+    public BufferedArrayList_Naive(int initialCapacity, int customChunkSize) {
         this(initialCapacity);
         this.chunkSize = customChunkSize;
         this.smallChunkSize = Math.max(customChunkSize / 4, 64);
@@ -1828,15 +1825,15 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
         ensureIndicesUpdated();
 
-        if (ebccEnabled) {
-            if (index == lastGetIndex + 1) {
-                sequentialAccessCount++;
-                if (sequentialAccessCount == COMPACTION_THRESHOLD && lastAccessedChunkIndex >= 0) {
-                    compactChunkForRead(lastAccessedChunkIndex);
-                }
-            } else {
-                sequentialAccessCount = 0;
+        // SAD: detect sequential access pattern
+        if (index == lastGetIndex + 1) {
+            sequentialAccessCount++;
+            // EBCC: when sequential pattern confirmed, compact current chunk
+            if (sequentialAccessCount == COMPACTION_THRESHOLD && lastAccessedChunkIndex >= 0) {
+                compactChunkForRead(lastAccessedChunkIndex);
             }
+        } else {
+            sequentialAccessCount = 0;
         }
         lastGetIndex = index;
 
@@ -1860,7 +1857,8 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
                 if (index >= nextStart && index < nextStart + next.used) {
                     lastAccessedChunkIndex++;
                     lastAccessedStartIndex = nextStart;
-                    if (ebccEnabled && sequentialAccessCount >= COMPACTION_THRESHOLD) {
+                    // EBCC: compact next chunk when entering it during sequential scan
+                    if (sequentialAccessCount >= COMPACTION_THRESHOLD) {
                         compactChunkForRead(lastAccessedChunkIndex);
                     }
                     return (E) next.getWithGap(index - nextStart);
@@ -2403,7 +2401,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     public Object clone() {
         try {
             @SuppressWarnings("unchecked")
-            BufferedArrayList<E> clone = (BufferedArrayList<E>) super.clone();
+            BufferedArrayList_Naive<E> clone = (BufferedArrayList_Naive<E>) super.clone();
 
             // Create fresh arrays for the clone
             clone.chunks = new Object[chunkCount];
@@ -2554,7 +2552,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             if (modCount != expectedModCount)
                 throw new ConcurrentModificationException();
 
-            BufferedArrayList.this.remove(lastRet);
+            BufferedArrayList_Naive.this.remove(lastRet);
             if (lastRet < cursor)
                 cursor--;
             lastRet = -1;
@@ -2647,7 +2645,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             if (modCount != expectedModCount)
                 throw new ConcurrentModificationException();
 
-            BufferedArrayList.this.set(lastRet, e);
+            BufferedArrayList_Naive.this.set(lastRet, e);
             expectedModCount = modCount;
         }
 
@@ -2656,7 +2654,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             if (modCount != expectedModCount)
                 throw new ConcurrentModificationException();
 
-            BufferedArrayList.this.add(cursor, e);
+            BufferedArrayList_Naive.this.add(cursor, e);
             expectedModCount = modCount;
             cursor++;
             lastRet = -1;
@@ -2737,7 +2735,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             checkForComodification();
 
             try {
-                BufferedArrayList.this.remove(lastRet);
+                BufferedArrayList_Naive.this.remove(lastRet);
                 if (lastRet < cursor)
                     cursor--;
                 lastRet = -1;
@@ -2840,7 +2838,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             checkForComodification();
 
             try {
-                BufferedArrayList.this.set(lastRet, e);
+                BufferedArrayList_Naive.this.set(lastRet, e);
                 expectedModCount = modCount;
             } catch (IndexOutOfBoundsException ex) {
                 throw new ConcurrentModificationException();
@@ -2853,7 +2851,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
             try {
                 int i = cursor;
-                BufferedArrayList.this.add(i, e);
+                BufferedArrayList_Naive.this.add(i, e);
                 cursor = i + 1;
                 lastRet = -1;
                 expectedModCount = modCount;
@@ -2883,11 +2881,11 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     }
 
     private static class SubList<E> extends AbstractList<E> implements RandomAccess {
-        private final BufferedArrayList<E> parent;
+        private final BufferedArrayList_Naive<E> parent;
         private final int offset;
         private int size;
 
-        SubList(BufferedArrayList<E> parent, int fromIndex, int toIndex) {
+        SubList(BufferedArrayList_Naive<E> parent, int fromIndex, int toIndex) {
             this.parent = parent;
             offset = fromIndex;
             size = toIndex - fromIndex;
@@ -2943,152 +2941,6 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             throw new IndexOutOfBoundsException("toIndex = " + toIndex);
         if (fromIndex > toIndex)
             throw new IllegalArgumentException("fromIndex(" + fromIndex + ") > toIndex(" + toIndex + ")");
-    }
-
-    // ==================== Ablation Study Support Methods ====================
-
-    public int getChunkCount() {
-        ensureIndicesUpdated();
-        return chunkCount;
-    }
-
-    public int getChunkStartIndex(int chunkIdx) {
-        ensureIndicesUpdated();
-        return chunkStartIndices[chunkIdx];
-    }
-
-    public int getChunkGapStart(int chunkIdx) {
-        ensureIndicesUpdated();
-        Chunk c = (Chunk) chunks[chunkIdx];
-        return chunkStartIndices[chunkIdx] + c.gapStart;
-    }
-
-    public int getChunkUsed(int chunkIdx) {
-        ensureIndicesUpdated();
-        Chunk c = (Chunk) chunks[chunkIdx];
-        return c.used;
-    }
-
-    @SuppressWarnings("unchecked")
-    public E getBranchBased(int index) {
-        if (index < 0 || index >= size) {
-            throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + size);
-        }
-
-        ensureIndicesUpdated();
-
-        if (ebccEnabled) {
-            if (index == lastGetIndex + 1) {
-                sequentialAccessCount++;
-                if (sequentialAccessCount == COMPACTION_THRESHOLD && lastAccessedChunkIndex >= 0) {
-                    compactChunkForRead(lastAccessedChunkIndex);
-                }
-            } else {
-                sequentialAccessCount = 0;
-            }
-        }
-        lastGetIndex = index;
-
-        if (chunkCount == 1) {
-            Chunk c = (Chunk) chunks[0];
-            return (E) c.getWithGapBranch(index);
-        }
-
-        if (lastAccessedChunkIndex >= 0 && lastAccessedChunkIndex < chunkCount) {
-            int start = lastAccessedStartIndex;
-            Chunk c = (Chunk) chunks[lastAccessedChunkIndex];
-            if (index >= start && index < start + c.used) {
-                return (E) c.getWithGapBranch(index - start);
-            }
-            if (lastAccessedChunkIndex + 1 < chunkCount) {
-                int nextStart = chunkStartIndices[lastAccessedChunkIndex + 1];
-                Chunk next = (Chunk) chunks[lastAccessedChunkIndex + 1];
-                if (index >= nextStart && index < nextStart + next.used) {
-                    lastAccessedChunkIndex++;
-                    lastAccessedStartIndex = nextStart;
-                    if (ebccEnabled && sequentialAccessCount >= COMPACTION_THRESHOLD) {
-                        compactChunkForRead(lastAccessedChunkIndex);
-                    }
-                    return (E) next.getWithGapBranch(index - nextStart);
-                }
-            }
-        }
-
-        int[] pos = getChunkPosition(index);
-        Chunk chunk = (Chunk) chunks[pos[0]];
-        return (E) chunk.getWithGapBranch(pos[1]);
-    }
-
-    @SuppressWarnings("unchecked")
-    public E getViaBinarySearch(int index) {
-        if (index < 0 || index >= size) {
-            throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + size);
-        }
-
-        ensureIndicesUpdated();
-
-        if (ebccEnabled) {
-            if (index == lastGetIndex + 1) {
-                sequentialAccessCount++;
-                if (sequentialAccessCount == COMPACTION_THRESHOLD && lastAccessedChunkIndex >= 0) {
-                    compactChunkForRead(lastAccessedChunkIndex);
-                }
-            } else {
-                sequentialAccessCount = 0;
-            }
-        }
-        lastGetIndex = index;
-
-        if (chunkCount == 1) {
-            Chunk c = (Chunk) chunks[0];
-            return (E) c.getWithGap(index);
-        }
-
-        if (lastAccessedChunkIndex >= 0 && lastAccessedChunkIndex < chunkCount) {
-            int start = lastAccessedStartIndex;
-            Chunk c = (Chunk) chunks[lastAccessedChunkIndex];
-            if (index >= start && index < start + c.used) {
-                return (E) c.getWithGap(index - start);
-            }
-            if (lastAccessedChunkIndex + 1 < chunkCount) {
-                int nextStart = chunkStartIndices[lastAccessedChunkIndex + 1];
-                Chunk next = (Chunk) chunks[lastAccessedChunkIndex + 1];
-                if (index >= nextStart && index < nextStart + next.used) {
-                    lastAccessedChunkIndex++;
-                    lastAccessedStartIndex = nextStart;
-                    if (ebccEnabled && sequentialAccessCount >= COMPACTION_THRESHOLD) {
-                        compactChunkForRead(lastAccessedChunkIndex);
-                    }
-                    return (E) next.getWithGap(index - nextStart);
-                }
-            }
-        }
-
-        int chunkIndex = binarySearchChunkIndex(index);
-        int position = index - chunkStartIndices[chunkIndex];
-        Chunk chunk = (Chunk) chunks[chunkIndex];
-        return (E) chunk.getWithGap(position);
-    }
-
-    private int binarySearchChunkIndex(int index) {
-        int low = 0, high = chunkCount - 1;
-        while (low <= high) {
-            int mid = (low + high) >>> 1;
-            if (mid > 0 && index < chunkStartIndices[mid]) {
-                high = mid - 1;
-            } else if (mid < chunkCount - 1 && index >= chunkStartIndices[mid + 1]) {
-                low = mid + 1;
-            } else {
-                return mid;
-            }
-        }
-        return Math.max(0, Math.min(low, chunkCount - 1));
-    }
-
-    private boolean ebccEnabled = true;
-
-    public void setEBCCEnabled(boolean enabled) {
-        this.ebccEnabled = enabled;
     }
 
 } 

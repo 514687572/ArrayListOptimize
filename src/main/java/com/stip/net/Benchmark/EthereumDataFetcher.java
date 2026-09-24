@@ -58,42 +58,7 @@ public class EthereumDataFetcher {
     }
 
     public static List<RealTransaction> fetchRealTransactions(int targetCount) throws Exception {
-        List<RealTransaction> allTxs = new ArrayList<>();
-
-        long latestBlock = rpcWithRetry("eth_blockNumber", new JSONArray(), -1);
-        latestBlock = Long.parseUnsignedLong(String.valueOf(latestBlock).substring(2), 16);
-        System.out.println("Latest block: " + latestBlock);
-
-        long startBlock = latestBlock - 2000;
-        long currentBlock = startBlock;
-        int consecutiveErrors = 0;
-
-        while (allTxs.size() < targetCount && currentBlock <= latestBlock) {
-            try {
-                JSONArray params = new JSONArray();
-                params.add("0x" + Long.toHexString(currentBlock));
-                params.add(true);
-
-                long blockObj = rpcWithRetry("eth_getBlockByNumber", params, currentBlock);
-                Thread.sleep(50);
-
-                consecutiveErrors = 0;
-            } catch (Exception e) {
-                consecutiveErrors++;
-                if (consecutiveErrors > 20) {
-                    System.err.println("Too many consecutive errors, stopping.");
-                    break;
-                }
-                if (e.getMessage() != null && (e.getMessage().contains("503") || e.getMessage().contains("429") || e.getMessage().contains("502"))) {
-                    currentRpcIndex = (currentRpcIndex + 1) % PUBLIC_RPCS.length;
-                    System.out.println("  Rate limited, switching to RPC: " + PUBLIC_RPCS[currentRpcIndex]);
-                    Thread.sleep(2000);
-                    continue;
-                }
-            }
-            currentBlock++;
-        }
-        return allTxs;
+        return fetchAndParseBlocks(targetCount);
     }
 
     private static long rpcWithRetry(String method, JSONArray params, long blockHint) throws Exception {
@@ -192,7 +157,7 @@ public class EthereumDataFetcher {
         long latestBlock = Long.parseUnsignedLong(resp.getString("result").substring(2), 16);
         System.out.println("Latest block: " + latestBlock);
 
-        long startBlock = latestBlock - 2000;
+        long startBlock = latestBlock - 200000;
         long currentBlock = startBlock;
         int errors = 0;
 
