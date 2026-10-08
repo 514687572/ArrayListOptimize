@@ -91,7 +91,13 @@ public class HighPerformanceListBenchmark {
      * - VECTOR: Synchronized ArrayList (thread-safe but slower)
      * - BUFFERED_ARRAY_LIST: Gap buffer + chunked array hybrid (our contribution)
      */
-    @Param({"ARRAY_LIST", "TREE_LIST", "VECTOR", "BUFFERED_ARRAY_LIST", "LINKED_LIST"})
+    /**
+     * Primary paper suite uses ARRAY_LIST,TREE_LIST,VECTOR,BUFFERED_ARRAY_LIST via CLI -p.
+     * Supplementary baselines (not in default cross-product for full runs): LINKED_LIST,
+     * ARRAY_DEQUE ({@link com.stip.net.optimized.ArrayDequeList}), CHUNK_LIST
+     * ({@link com.stip.net.optimized.ChunkList}).
+     */
+    @Param({"ARRAY_LIST", "TREE_LIST", "VECTOR", "BUFFERED_ARRAY_LIST"})
     private String listType;
 
     /**
@@ -375,6 +381,14 @@ public class HighPerformanceListBenchmark {
                 
             case "LINKED_LIST":
                 return new java.util.LinkedList<>();
+
+            case "ARRAY_DEQUE":
+                // Circular-buffer List modeled on ArrayDeque (efficient head/tail).
+                return new com.stip.net.optimized.ArrayDequeList<>(initialCapacity);
+
+            case "CHUNK_LIST":
+                // Chunked arrays without gap buffers (classical Chunk List baseline).
+                return new com.stip.net.optimized.ChunkList<>(initialCapacity);
                 
             default:
                 throw new IllegalArgumentException("Unknown list type: " + type);

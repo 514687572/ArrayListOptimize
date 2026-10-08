@@ -204,10 +204,10 @@ public class RealEthereumBenchmark {
     @SuppressWarnings("unchecked")
     private <T> List<T> createList() {
         switch (listType) {
-            case "ARRAY_LIST": return new ArrayList<>();
+            case "ARRAY_LIST": return new ArrayList<>(realTransactions.size());
             case "TREE_LIST": return new TreeList<>();
-            case "VECTOR": return new Vector<>();
-            case "BUFFERED_ARRAY_LIST": return new BufferedArrayList<>();
+            case "VECTOR": return new Vector<>(realTransactions.size());
+            case "BUFFERED_ARRAY_LIST": return new BufferedArrayList<>(realTransactions.size());
             default: throw new IllegalArgumentException("Unknown: " + listType);
         }
     }

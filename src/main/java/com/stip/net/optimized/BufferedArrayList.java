@@ -183,28 +183,21 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
             if (position < gapStart) {
                 // Move gap left: shift elements from [position, gapStart) to after gap
-                // These elements are currently at physical indices [position, gapStart)
-                // They need to move to physical indices [gapEnd - count, gapEnd)
                 int count = gapStart - position;
                 System.arraycopy(elements, position, elements, gapEnd - count, count);
                 gapEnd -= count;
                 gapStart = position;
             } else if (position > gapStart) {
                 // Move gap right: shift elements from after gap to before gap
-                // We want to move gap from gapStart to position
-                // The elements currently at logical indices [gapStart, position) need to shift left
-                // These are at physical indices [gapEnd, gapEnd + count)
                 int count = position - gapStart;
 
-                // Verify we have enough logical elements after gap
-                int elementsAfterGap = used - gapStart; // Logical count
+                int elementsAfterGap = used - gapStart;
                 if (count > elementsAfterGap) {
                     throw new IllegalStateException(
                             "Cannot move gap to position " + position +
                                     ": only " + elementsAfterGap + " elements after gap at " + gapStart);
                 }
 
-                // CRITICAL: Verify physical array bounds
                 if (gapEnd + count > capacity) {
                     throw new ArrayIndexOutOfBoundsException(
                             "Gap buffer inconsistency: gapEnd=" + gapEnd + ", count=" + count +
@@ -215,7 +208,10 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
                 gapStart += count;
                 gapEnd += count;
             }
-            // If position == gapStart, gap is already at the right position
+            // Clear vacated gap slots so moved-away references do not loiter for GC.
+            if (gapEnd > gapStart) {
+                Arrays.fill(elements, gapStart, gapEnd, null);
+            }
         }
 
         /**
@@ -510,50 +506,19 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     private int fastIndexMapSize;
 
     /**
-     * Last accessed chunk index (for sequential access optimization)
+     * Per-thread access hints for last-chunk fast path.
+     * Thread-local so concurrent readers after freeze/publication do not race
+     * on shared mutable lookup state (unlike a shared LinkedHashMap LRU).
      */
-    private int lastAccessedChunkIndex = -1;
+    private static final class AccessHint {
+        int lastChunk = -1;
+        int lastStart = 0;
+        int seqCount = 0;
+        int lastGet = -2;
+    }
 
-    /**
-     * Last accessed chunk starting index
-     */
-    private int lastAccessedStartIndex = 0;
-
-    /**
-     * OPTIMIZED (SAD): Sequential Access Detection counter
-     * Counts consecutive sequential accesses to trigger chunk compaction
-     * When sequentialCount >= COMPACTION_THRESHOLD, compact the current chunk
-     * This implements the "Adaptive Chunk Compaction" (ACC) optimization:
-     * write-heavy phase: gap buffer active (no compaction)
-     * read-heavy phase: auto-detect sequential pattern and compact chunks
-     */
-    private transient int sequentialAccessCount = 0;
-    private static final int COMPACTION_THRESHOLD = 64;
-    private transient int lastGetIndex = -2;
-
-    // ==================== LRU 缓存优化（阶段 2：严格 LRU）====================
-    private static final int CACHE_SIZE = 12;  // 8~16 之间，12 是甜点
-
-    /**
-     * LRU Cache: key = (chunkIndex << 32) | start, value = Chunk引用
-     * 使用 LinkedHashMap 实现真正的 LRU（accessOrder = true）
-     *
-     * CRITICAL FIX: 使用 (chunkIdx + start) 组合作为 key，避免 start 变化导致缓存失效
-     * - 高 32 位：chunkIndex
-     * - 低 32 位：chunkStartIndices[chunkIndex]
-     */
-    @SuppressWarnings("serial")
-    private final LinkedHashMap<Long, Chunk> chunkLruCache =
-            new LinkedHashMap<Long, Chunk>(CACHE_SIZE, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<Long, Chunk> eldest) {
-                    return size() > CACHE_SIZE;
-                }
-            };
-
-    // 统计用（可选，用于测试验证）
-    private transient int cacheHitCount = 0;
-    private transient int cacheMissCount = 0;
+    private final transient ThreadLocal<AccessHint> accessHint =
+            ThreadLocal.withInitial(AccessHint::new);
 
     /**
      * Dirty flag for incremental index updates
@@ -629,13 +594,21 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         this(DEFAULT_CAPACITY);
     }
 
-    public BufferedArrayList(int initialCapacity, int customChunkSize) {
+    /**
+     * Constructs a list with the given capacity hint and initial per-chunk capacity.
+     * Named {@code initialChunkSize} (not a live adaptive knob): online re-sizing of
+     * {@code k} remains future work; the field is fixed after construction.
+     *
+     * @param initialCapacity   capacity hint for directory / pre-allocation
+     * @param initialChunkSize  initial chunk capacity {@code k} (power of two recommended)
+     */
+    public BufferedArrayList(int initialCapacity, int initialChunkSize) {
         this(initialCapacity);
-        this.chunkSize = customChunkSize;
-        this.smallChunkSize = Math.max(customChunkSize / 4, 64);
-        this.chunkSizeShift = 31 - Integer.numberOfLeadingZeros(customChunkSize);
-        this.chunkSizeMask = customChunkSize - 1;
-        this.splitThreshold = customChunkSize * 2;
+        this.chunkSize = initialChunkSize;
+        this.smallChunkSize = Math.max(initialChunkSize / 4, 64);
+        this.chunkSizeShift = 31 - Integer.numberOfLeadingZeros(initialChunkSize);
+        this.chunkSizeMask = initialChunkSize - 1;
+        this.splitThreshold = initialChunkSize * 2;
     }
 
     /**
@@ -669,22 +642,23 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             throw new IllegalStateException("No chunks available in the list");
         }
 
-        // Fast path: last accessed chunk
-        if (lastAccessedChunkIndex >= 0 && lastAccessedChunkIndex < chunkCount) {
-            int startIndex = lastAccessedStartIndex;
-            Chunk chunk = (Chunk) chunks[lastAccessedChunkIndex];
+        AccessHint hint = accessHint.get();
+        // Fast path: last accessed chunk (thread-local)
+        if (hint.lastChunk >= 0 && hint.lastChunk < chunkCount) {
+            int startIndex = hint.lastStart;
+            Chunk chunk = (Chunk) chunks[hint.lastChunk];
             if (index >= startIndex && index < startIndex + chunk.used) {
-                cachedChunkPos[0] = lastAccessedChunkIndex;
+                cachedChunkPos[0] = hint.lastChunk;
                 cachedChunkPos[1] = index - startIndex;
                 return cachedChunkPos;
             }
-            if (lastAccessedChunkIndex + 1 < chunkCount) {
-                int nextStart = chunkStartIndices[lastAccessedChunkIndex + 1];
-                Chunk nextChunk = (Chunk) chunks[lastAccessedChunkIndex + 1];
+            if (hint.lastChunk + 1 < chunkCount) {
+                int nextStart = chunkStartIndices[hint.lastChunk + 1];
+                Chunk nextChunk = (Chunk) chunks[hint.lastChunk + 1];
                 if (index >= nextStart && index < nextStart + nextChunk.used) {
-                    lastAccessedChunkIndex++;
-                    lastAccessedStartIndex = nextStart;
-                    cachedChunkPos[0] = lastAccessedChunkIndex;
+                    hint.lastChunk++;
+                    hint.lastStart = nextStart;
+                    cachedChunkPos[0] = hint.lastChunk;
                     cachedChunkPos[1] = index - nextStart;
                     return cachedChunkPos;
                 }
@@ -694,8 +668,8 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         // VCIS: Vectorized Chunk Index Search
         int chunkIndex = simdChunkSearch(index, chunkStartIndices, chunkCount);
 
-        lastAccessedChunkIndex = chunkIndex;
-        lastAccessedStartIndex = chunkStartIndices[chunkIndex];
+        hint.lastChunk = chunkIndex;
+        hint.lastStart = chunkStartIndices[chunkIndex];
 
         cachedChunkPos[0] = chunkIndex;
         cachedChunkPos[1] = index - chunkStartIndices[chunkIndex];
@@ -933,27 +907,13 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     }
 
     /**
-     * Get LRU cache statistics (阶段 2)
+     * Access-hint diagnostics (per calling thread).
      */
     public String getCacheStats() {
-        int totalAccess = cacheHitCount + cacheMissCount;
-        double hitRate = totalAccess > 0 ? (cacheHitCount * 100.0 / totalAccess) : 0;
-
+        AccessHint h = accessHint.get();
         return String.format(
-                "LRU Cache Stats:\n" +
-                        "  Cache size: %d\n" +
-                        "  Total accesses: %d\n" +
-                        "  Cache hits: %d\n" +
-                        "  Cache misses: %d\n" +
-                        "  Hit rate: %.2f%%\n" +
-                        "  Current entries: %d",
-                CACHE_SIZE,
-                totalAccess,
-                cacheHitCount,
-                cacheMissCount,
-                hitRate,
-                chunkLruCache.size()
-        );
+                "Access hint (thread-local): lastChunk=%d lastStart=%d seqCount=%d lastGet=%d",
+                h.lastChunk, h.lastStart, h.seqCount, h.lastGet);
     }
 
     /**
@@ -1031,12 +991,13 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
     }
 
     /**
-     * 清除 LRU 缓存（阶段 2: LinkedHashMap）
+     * Reset thread-local access hints after structural directory changes.
      */
     private void invalidateCache() {
-        chunkLruCache.clear();
-        cacheHitCount = 0;
-        cacheMissCount = 0;
+        accessHint.get().lastChunk = -1;
+        accessHint.get().lastStart = 0;
+        accessHint.get().seqCount = 0;
+        accessHint.get().lastGet = -2;
     }
 
     /**
@@ -1828,17 +1789,14 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
         ensureIndicesUpdated();
 
-        if (ebccEnabled) {
-            if (index == lastGetIndex + 1) {
-                sequentialAccessCount++;
-                if (sequentialAccessCount == COMPACTION_THRESHOLD && lastAccessedChunkIndex >= 0) {
-                    compactChunkForRead(lastAccessedChunkIndex);
-                }
-            } else {
-                sequentialAccessCount = 0;
-            }
+        AccessHint hint = accessHint.get();
+        // Track sequential access for diagnostics only; do not reshape shared layout on get().
+        if (index == hint.lastGet + 1) {
+            hint.seqCount++;
+        } else {
+            hint.seqCount = 0;
         }
-        lastGetIndex = index;
+        hint.lastGet = index;
 
         // Fast path: single-chunk list
         if (chunkCount == 1) {
@@ -1846,23 +1804,19 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
             return (E) c.getWithGap(index);
         }
 
-        // Fast path: check last accessed chunk (most common for sequential access)
-        if (lastAccessedChunkIndex >= 0 && lastAccessedChunkIndex < chunkCount) {
-            int start = lastAccessedStartIndex;
-            Chunk c = (Chunk) chunks[lastAccessedChunkIndex];
+        // Fast path: check last accessed chunk (thread-local)
+        if (hint.lastChunk >= 0 && hint.lastChunk < chunkCount) {
+            int start = hint.lastStart;
+            Chunk c = (Chunk) chunks[hint.lastChunk];
             if (index >= start && index < start + c.used) {
                 return (E) c.getWithGap(index - start);
             }
-            // Check next chunk (sequential pattern)
-            if (lastAccessedChunkIndex + 1 < chunkCount) {
-                int nextStart = chunkStartIndices[lastAccessedChunkIndex + 1];
-                Chunk next = (Chunk) chunks[lastAccessedChunkIndex + 1];
+            if (hint.lastChunk + 1 < chunkCount) {
+                int nextStart = chunkStartIndices[hint.lastChunk + 1];
+                Chunk next = (Chunk) chunks[hint.lastChunk + 1];
                 if (index >= nextStart && index < nextStart + next.used) {
-                    lastAccessedChunkIndex++;
-                    lastAccessedStartIndex = nextStart;
-                    if (ebccEnabled && sequentialAccessCount >= COMPACTION_THRESHOLD) {
-                        compactChunkForRead(lastAccessedChunkIndex);
-                    }
+                    hint.lastChunk++;
+                    hint.lastStart = nextStart;
                     return (E) next.getWithGap(index - nextStart);
                 }
             }
@@ -1872,26 +1826,6 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
         int[] pos = getChunkPosition(index);
         Chunk chunk = (Chunk) chunks[pos[0]];
         return (E) chunk.getWithGap(pos[1]);
-    }
-
-    /**
-     * EBCC: Compact a chunk for read-optimized access
-     * Moves gap to the end of the chunk, making elements[0..used-1] contiguous
-     * 
-     * This is the core of the Access-Mode-Adaptive optimization:
-     * - After compaction, getWithGap() becomes a direct array access (no branch)
-     * - CPU prefetcher can recognize sequential pattern
-     * - The gap remains available for future writes (gap buffer preserved)
-     * 
-     * Trade-off: O(chunkSize) gap move, amortized over many sequential reads
-     */
-    private void compactChunkForRead(int chunkIndex) {
-        if (chunkIndex < 0 || chunkIndex >= chunkCount) return;
-        Chunk chunk = (Chunk) chunks[chunkIndex];
-        // Only compact if gap is not already at end
-        if (chunk.gapStart < chunk.used && chunk.gapSize() > 0) {
-            chunk.moveGapTo(chunk.used);
-        }
     }
 
     /**
@@ -2503,7 +2437,7 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
          * After compaction, elements[0..used-1] are contiguous
          */
         protected void ensureCompact() {
-            if (!chunkIsCompact) {
+            if (!chunkIsCompact && ebccEnabled) {
                 currentChunk.moveGapTo(currentUsed);
                 currentArray = currentChunk.elements; // refresh after move
                 chunkIsCompact = true;
@@ -2532,15 +2466,22 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
                 currentUsed = currentChunk.used;
                 currentArray = currentChunk.elements;
                 positionInChunk = 0;
-                // Inline lazy compaction check - avoid method call for JIT inlining
-                if (currentChunk.gapStart < currentUsed && currentChunk.gapSize() > 0) {
+                // Lazy compaction on iterator path only (not on get()), gated by ebccEnabled
+                if (ebccEnabled && currentChunk.gapStart < currentUsed && currentChunk.gapSize() > 0) {
                     currentChunk.moveGapTo(currentUsed);
                     currentArray = currentChunk.elements;
+                    chunkIsCompact = true;
+                } else {
+                    chunkIsCompact = (currentChunk.gapStart >= currentUsed) || (currentChunk.gapSize() == 0);
                 }
             }
 
-            // Direct array access - contiguous after compaction
-            E next = (E) currentArray[positionInChunk];
+            E next;
+            if (chunkIsCompact || currentChunk.gapSize() == 0) {
+                next = (E) currentArray[positionInChunk];
+            } else {
+                next = (E) currentChunk.getWithGap(positionInChunk);
+            }
             positionInChunk++;
             lastRet = cursor;
             cursor++;
@@ -2977,38 +2918,31 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
         ensureIndicesUpdated();
 
-        if (ebccEnabled) {
-            if (index == lastGetIndex + 1) {
-                sequentialAccessCount++;
-                if (sequentialAccessCount == COMPACTION_THRESHOLD && lastAccessedChunkIndex >= 0) {
-                    compactChunkForRead(lastAccessedChunkIndex);
-                }
-            } else {
-                sequentialAccessCount = 0;
-            }
+        AccessHint hint = accessHint.get();
+        if (index == hint.lastGet + 1) {
+            hint.seqCount++;
+        } else {
+            hint.seqCount = 0;
         }
-        lastGetIndex = index;
+        hint.lastGet = index;
 
         if (chunkCount == 1) {
             Chunk c = (Chunk) chunks[0];
             return (E) c.getWithGapBranch(index);
         }
 
-        if (lastAccessedChunkIndex >= 0 && lastAccessedChunkIndex < chunkCount) {
-            int start = lastAccessedStartIndex;
-            Chunk c = (Chunk) chunks[lastAccessedChunkIndex];
+        if (hint.lastChunk >= 0 && hint.lastChunk < chunkCount) {
+            int start = hint.lastStart;
+            Chunk c = (Chunk) chunks[hint.lastChunk];
             if (index >= start && index < start + c.used) {
                 return (E) c.getWithGapBranch(index - start);
             }
-            if (lastAccessedChunkIndex + 1 < chunkCount) {
-                int nextStart = chunkStartIndices[lastAccessedChunkIndex + 1];
-                Chunk next = (Chunk) chunks[lastAccessedChunkIndex + 1];
+            if (hint.lastChunk + 1 < chunkCount) {
+                int nextStart = chunkStartIndices[hint.lastChunk + 1];
+                Chunk next = (Chunk) chunks[hint.lastChunk + 1];
                 if (index >= nextStart && index < nextStart + next.used) {
-                    lastAccessedChunkIndex++;
-                    lastAccessedStartIndex = nextStart;
-                    if (ebccEnabled && sequentialAccessCount >= COMPACTION_THRESHOLD) {
-                        compactChunkForRead(lastAccessedChunkIndex);
-                    }
+                    hint.lastChunk++;
+                    hint.lastStart = nextStart;
                     return (E) next.getWithGapBranch(index - nextStart);
                 }
             }
@@ -3027,44 +2961,39 @@ public class BufferedArrayList<E> extends AbstractList<E> implements RandomAcces
 
         ensureIndicesUpdated();
 
-        if (ebccEnabled) {
-            if (index == lastGetIndex + 1) {
-                sequentialAccessCount++;
-                if (sequentialAccessCount == COMPACTION_THRESHOLD && lastAccessedChunkIndex >= 0) {
-                    compactChunkForRead(lastAccessedChunkIndex);
-                }
-            } else {
-                sequentialAccessCount = 0;
-            }
+        AccessHint hint = accessHint.get();
+        if (index == hint.lastGet + 1) {
+            hint.seqCount++;
+        } else {
+            hint.seqCount = 0;
         }
-        lastGetIndex = index;
+        hint.lastGet = index;
 
         if (chunkCount == 1) {
             Chunk c = (Chunk) chunks[0];
             return (E) c.getWithGap(index);
         }
 
-        if (lastAccessedChunkIndex >= 0 && lastAccessedChunkIndex < chunkCount) {
-            int start = lastAccessedStartIndex;
-            Chunk c = (Chunk) chunks[lastAccessedChunkIndex];
+        if (hint.lastChunk >= 0 && hint.lastChunk < chunkCount) {
+            int start = hint.lastStart;
+            Chunk c = (Chunk) chunks[hint.lastChunk];
             if (index >= start && index < start + c.used) {
                 return (E) c.getWithGap(index - start);
             }
-            if (lastAccessedChunkIndex + 1 < chunkCount) {
-                int nextStart = chunkStartIndices[lastAccessedChunkIndex + 1];
-                Chunk next = (Chunk) chunks[lastAccessedChunkIndex + 1];
+            if (hint.lastChunk + 1 < chunkCount) {
+                int nextStart = chunkStartIndices[hint.lastChunk + 1];
+                Chunk next = (Chunk) chunks[hint.lastChunk + 1];
                 if (index >= nextStart && index < nextStart + next.used) {
-                    lastAccessedChunkIndex++;
-                    lastAccessedStartIndex = nextStart;
-                    if (ebccEnabled && sequentialAccessCount >= COMPACTION_THRESHOLD) {
-                        compactChunkForRead(lastAccessedChunkIndex);
-                    }
+                    hint.lastChunk++;
+                    hint.lastStart = nextStart;
                     return (E) next.getWithGap(index - nextStart);
                 }
             }
         }
 
         int chunkIndex = binarySearchChunkIndex(index);
+        hint.lastChunk = chunkIndex;
+        hint.lastStart = chunkStartIndices[chunkIndex];
         int position = index - chunkStartIndices[chunkIndex];
         Chunk chunk = (Chunk) chunks[chunkIndex];
         return (E) chunk.getWithGap(position);
